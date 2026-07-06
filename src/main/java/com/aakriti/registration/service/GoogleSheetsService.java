@@ -32,9 +32,14 @@ public class GoogleSheetsService {
             // Generate unique Team ID
             String teamId = "TEAM-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
+            String teamNameFallback = dto.getTeamName();
+            if (teamNameFallback == null || teamNameFallback.trim().isEmpty()) {
+                teamNameFallback = "Solo";
+            }
+
             List<Object> rowValues = Arrays.asList(
                     teamId,
-                    dto.getTeamName(),
+                    teamNameFallback,
                     dto.getEventName(),
                     dto.getCollegeName(),
                     dto.getYearOfStudy(),
@@ -49,14 +54,14 @@ public class GoogleSheetsService {
             ValueRange body = new ValueRange()
                     .setValues(Collections.singletonList(rowValues));
 
-            log.info("Appending registration for team {} to sheet tab {}", dto.getTeamName(), tabName);
+            log.info("Appending registration for team {} to sheet tab {}", teamNameFallback, tabName);
 
             sheetsService.spreadsheets().values()
                     .append(SPREADSHEET_ID, range, body)
                     .setValueInputOption("USER_ENTERED")
                     .execute();
 
-            log.info("Successfully appended registration data for team {}", dto.getTeamName());
+            log.info("Successfully appended registration data for team {}", teamNameFallback);
         } catch (IOException e) {
             log.error("Failed to append registration data to Google Sheets", e);
         }

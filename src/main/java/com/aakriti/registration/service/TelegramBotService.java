@@ -100,7 +100,7 @@ public class TelegramBotService {
                 ----------------------------------------
                 💬 _Verify payment screenshot above._
                 """.formatted(
-                dto.getTeamName(),
+                dto.getTeamName() != null && !dto.getTeamName().trim().isEmpty() ? dto.getTeamName() : "Solo",
                 dto.getEventName(),
                 dto.getCategory() != null ? dto.getCategory().name() : "N/A",
                 dto.getLeaderName(),
