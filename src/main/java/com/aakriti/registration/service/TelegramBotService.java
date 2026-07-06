@@ -9,13 +9,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
 
 @Service
 @Slf4j
@@ -35,7 +33,8 @@ public class TelegramBotService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public void sendRegistrationAlert(TeamRegistrationDto dto, MultipartFile screenshot) {
+    @Async
+    public void sendRegistrationAlert(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename) {
         // 1. Resolve which channel to target based on the enum/string category
         String targetChatId = determineChatId(dto.getCategory());
         
@@ -46,11 +45,11 @@ public class TelegramBotService {
         String url = "https://api.telegram.org/bot" + botToken + "/sendPhoto";
 
         try {
-            // 4. Wrap MultipartFile into a ByteArrayResource so RestTemplate can parse it as binary
-            ByteArrayResource fileResource = new ByteArrayResource(screenshot.getBytes()) {
+            // 4. Wrap byte[] into a ByteArrayResource so RestTemplate can parse it as binary
+            ByteArrayResource fileResource = new ByteArrayResource(screenshotBytes) {
                 @Override
                 public String getFilename() {
-                    return screenshot.getOriginalFilename() != null ? screenshot.getOriginalFilename() : "receipt.jpg";
+                    return originalFilename != null ? originalFilename : "receipt.jpg";
                 }
             };
 
@@ -70,9 +69,6 @@ public class TelegramBotService {
             ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
             log.info("Telegram notification sent successfully. Status code: {}", response.getStatusCode());
 
-        } catch (IOException e) {
-            log.error("Failed to read bytes from payment screenshot file", e);
-            throw new RuntimeException("Image processing failed for registration submission");
         } catch (Exception e) {
             log.error("Failed to send notification message to Telegram channel", e);
             // Non-blocking fallback so user registration isn't rolled back completely if Telegram undergoes brief lag

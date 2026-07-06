@@ -30,14 +30,18 @@ public class RegistrationController {
         try {
             log.info("Received registration request for team: {}", registrationDto.getTeamName());
 
-            // 1. Process payment file and send instant targeted channel alerts
-            telegramBotService.sendRegistrationAlert(registrationDto, screenshot);
+            // Extract screenshot bytes and filename synchronously before firing async task
+            byte[] screenshotBytes = screenshot.getBytes();
+            String originalFilename = screenshot.getOriginalFilename();
+
+            // 1. Process payment file and send instant targeted channel alerts asynchronously
+            telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
 
             // 2. Instead of a direct drive URL, save a placeholder flag reference in your Google Sheet column
             String screenshotStatusPlaceholder = "Sent to Telegram (" + 
                     (registrationDto.getCategory() != null ? registrationDto.getCategory().name() : "N/A") + ")";
 
-            // 3. Commit row structures right down to Google Sheets database
+            // 3. Commit row structures right down to Google Sheets database asynchronously
             sheetsService.appendRegistration(registrationDto, screenshotStatusPlaceholder);
 
             return ResponseEntity.status(HttpStatus.CREATED)
