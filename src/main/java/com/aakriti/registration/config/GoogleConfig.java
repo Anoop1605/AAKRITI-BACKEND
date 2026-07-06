@@ -28,16 +28,41 @@ public class GoogleConfig {
 
     @Bean
     public GoogleCredentials googleCredentials() {
-        try (InputStream credentialsStream = getClass().getResourceAsStream("/google-credentials.json")) {
-            if (credentialsStream == null) {
-                log.warn("google-credentials.json not found in resources. Fallback to unauthenticated dummy credentials.");
-                return com.google.auth.oauth2.GoogleCredentials.create(new com.google.auth.oauth2.AccessToken("dummy-token", null)).createScoped(SCOPES);
+        // 1. Try to load from environment variable
+        String envJson = System.getenv("GOOGLE_CREDENTIALS_JSON");
+        if (envJson != null && !envJson.trim().isEmpty()) {
+            try {
+                log.info("Loading Google credentials from GOOGLE_CREDENTIALS_JSON environment variable");
+                return GoogleCredentials.fromStream(new java.io.ByteArrayInputStream(envJson.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                        .createScoped(SCOPES);
+            } catch (Exception e) {
+                log.error("Failed to load Google credentials from environment variable: {}", e.getMessage());
             }
-            return GoogleCredentials.fromStream(credentialsStream).createScoped(SCOPES);
-        } catch (Exception e) {
-            log.error("Failed to load Google credentials. Using unauthenticated fallback. (Ensure google-credentials.json is placed in src/main/resources or GOOGLE_APPLICATION_CREDENTIALS is set): {}", e.getMessage());
-            return com.google.auth.oauth2.GoogleCredentials.create(new com.google.auth.oauth2.AccessToken("dummy-token", null)).createScoped(SCOPES);
         }
+
+        // 2. Try to load from classpath
+        try (InputStream credentialsStream = getClass().getResourceAsStream("/google-credentials.json")) {
+            if (credentialsStream != null) {
+                log.info("Loading Google credentials from classpath: /google-credentials.json");
+                return GoogleCredentials.fromStream(credentialsStream).createScoped(SCOPES);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load Google credentials from classpath: {}", e.getMessage());
+        }
+
+        // 3. Try to load from file in the root directory
+        java.io.File file = new java.io.File("google-credentials.json");
+        if (file.exists()) {
+            try (InputStream fileStream = new java.io.FileInputStream(file)) {
+                log.info("Loading Google credentials from root directory file: google-credentials.json");
+                return GoogleCredentials.fromStream(fileStream).createScoped(SCOPES);
+            } catch (Exception e) {
+                log.error("Failed to load Google credentials from root directory file: {}", e.getMessage());
+            }
+        }
+
+        log.warn("google-credentials.json not found in env, classpath, or root. Fallback to unauthenticated dummy credentials.");
+        return com.google.auth.oauth2.GoogleCredentials.create(new com.google.auth.oauth2.AccessToken("dummy-token", null)).createScoped(SCOPES);
     }
 
     @Bean
