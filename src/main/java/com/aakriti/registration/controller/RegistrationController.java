@@ -1,6 +1,7 @@
 package com.aakriti.registration.controller;
 
 import com.aakriti.registration.dto.TeamRegistrationDto;
+import com.aakriti.registration.model.EventCategory;
 import com.aakriti.registration.service.TelegramBotService;
 import com.aakriti.registration.service.GoogleSheetsService;
 import lombok.RequiredArgsConstructor;
@@ -28,24 +29,59 @@ public class RegistrationController {
             @RequestParam("screenshot") MultipartFile screenshot) {
 
         try {
-            log.info("Received registration request for team: {}", registrationDto.getTeamName());
+            log.info("Received registration request for category: {}", registrationDto.getCategory());
 
-            // Extract screenshot bytes and filename synchronously before firing async task
             byte[] screenshotBytes = screenshot.getBytes();
             String originalFilename = screenshot.getOriginalFilename();
 
-            // 1. Process payment file and send instant targeted channel alerts asynchronously
-            telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
+            if (registrationDto.getCategory() == EventCategory.COMBO) {
+                // 1. Process payment file and send targeted channel alerts to both groups
+                telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
 
-            // 2. Instead of a direct drive URL, save a placeholder flag reference in your Google Sheet column
-            String screenshotStatusPlaceholder = "Sent to Telegram (" + 
-                    (registrationDto.getCategory() != null ? registrationDto.getCategory().name() : "N/A") + ")";
+                // 2. Parse comboData JSON and append 12 rows to Google Sheets
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                java.util.List<java.util.Map<String, Object>> rosters = mapper.readValue(
+                        registrationDto.getComboData(),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {}
+                );
 
-            // 3. Commit row structures right down to Google Sheets database asynchronously
-            sheetsService.appendRegistration(registrationDto, screenshotStatusPlaceholder);
+                for (java.util.Map<String, Object> roster : rosters) {
+                    TeamRegistrationDto eventDto = new TeamRegistrationDto();
+                    eventDto.setCollegeName(registrationDto.getCollegeName());
+                    eventDto.setYearOfStudy(registrationDto.getYearOfStudy());
+                    eventDto.setLeaderEmail(registrationDto.getLeaderEmail()); // Master submitter email
+                    
+                    eventDto.setEventName((String) roster.get("eventName"));
+                    eventDto.setTeamName((String) roster.get("teamName"));
+                    eventDto.setLeaderName((String) roster.get("leaderName"));
+                    eventDto.setLeaderPhone((String) roster.get("leaderPhone"));
+                    eventDto.setMemberNames((String) roster.get("memberNames"));
+                    
+                    // Resolve category based on eventId prefix (starts with "cul-" is Culturals, otherwise Management)
+                    String eventId = (String) roster.get("eventId");
+                    if (eventId != null && eventId.startsWith("cul-")) {
+                        eventDto.setCategory(EventCategory.CULTURALS);
+                    } else {
+                        eventDto.setCategory(EventCategory.MANAGEMENT);
+                    }
 
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(Map.of("message", "Registration successful", "teamName", registrationDto.getTeamName()));
+                    sheetsService.appendRegistration(eventDto, "ComboPass");
+                }
+
+                return ResponseEntity.status(HttpStatus.CREATED)
+                        .body(Map.of("message", "Combo Pass Registration successful"));
+            } else {
+                // Standard single registration flow
+                telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
+
+                String screenshotStatusPlaceholder = "Sent to Telegram (" + 
+                        (registrationDto.getCategory() != null ? registrationDto.getCategory().name() : "N/A") + ")";
+
+                sheetsService.appendRegistration(registrationDto, screenshotStatusPlaceholder);
+
+                return ResponseEntity.status(HttpStatus.CREATED)
+                        .body(Map.of("message", "Registration successful", "teamName", registrationDto.getTeamName()));
+            }
 
         } catch (Exception e) {
             log.error("Failed to process registration", e);

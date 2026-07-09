@@ -14,4 +14,5 @@ public class TeamRegistrationDto {
     private String collegeName;
     private String yearOfStudy;
     private String memberNames;
+    private String comboData;
 }

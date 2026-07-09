@@ -35,17 +35,21 @@ public class TelegramBotService {
 
     @Async
     public void sendRegistrationAlert(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename) {
-        // 1. Resolve which channel to target based on the enum/string category
-        String targetChatId = determineChatId(dto.getCategory());
-        
-        // 2. Format a highly readable, markdown-searchable caption for the image
-        String caption = formatTelegramMessage(dto);
+        if (dto.getCategory() == EventCategory.COMBO) {
+            log.info("Sending COMBO PASS registration alert to both Cultural and Management groups.");
+            sendToChannel(dto, screenshotBytes, originalFilename, culturalChatId);
+            sendToChannel(dto, screenshotBytes, originalFilename, managementChatId);
+        } else {
+            String targetChatId = determineChatId(dto.getCategory());
+            sendToChannel(dto, screenshotBytes, originalFilename, targetChatId);
+        }
+    }
 
-        // 3. Build the endpoint URL for Telegram's sendPhoto API
+    private void sendToChannel(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename, String targetChatId) {
+        String caption = formatTelegramMessage(dto);
         String url = "https://api.telegram.org/bot" + botToken + "/sendPhoto";
 
         try {
-            // 4. Wrap byte[] into a ByteArrayResource so RestTemplate can parse it as binary
             ByteArrayResource fileResource = new ByteArrayResource(screenshotBytes) {
                 @Override
                 public String getFilename() {
@@ -53,7 +57,6 @@ public class TelegramBotService {
                 }
             };
 
-            // 5. Prepare Multipart Request Payloads
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("chat_id", targetChatId);
             body.add("photo", fileResource);
@@ -65,26 +68,55 @@ public class TelegramBotService {
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-            // 6. Fire request to Telegram
             ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
-            log.info("Telegram notification sent successfully. Status code: {}", response.getStatusCode());
+            log.info("Telegram notification sent successfully to {}. Status code: {}", targetChatId, response.getStatusCode());
 
         } catch (Exception e) {
-            log.error("Failed to send notification message to Telegram channel", e);
-            // Non-blocking fallback so user registration isn't rolled back completely if Telegram undergoes brief lag
+            log.error("Failed to send notification message to Telegram channel " + targetChatId, e);
         }
     }
 
     private String determineChatId(EventCategory category) {
-        if (category == null) return sportsChatId; // Fallback default
+        if (category == null) return sportsChatId;
         return switch (category) {
             case SPORTS -> sportsChatId;
             case CULTURALS -> culturalChatId;
             case MANAGEMENT -> managementChatId;
+            case COMBO -> culturalChatId; // Fallback
         };
     }
 
     private String formatTelegramMessage(TeamRegistrationDto dto) {
+        if (dto.getCategory() == EventCategory.COMBO) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("🔥 *NEW COMBO PASS REGISTRATION ALERT* 🔥\n");
+            sb.append("----------------------------------------\n");
+            sb.append("👑 *Master Submitter:* ").append(dto.getLeaderName()).append("\n");
+            sb.append("📧 *Email Address:* ").append(dto.getLeaderEmail()).append("\n");
+            sb.append("📞 *Phone Number:* ").append(dto.getLeaderPhone()).append("\n");
+            sb.append("🏛️ *Institution:* ").append(dto.getCollegeName()).append("\n");
+            sb.append("🎓 *Year of Study:* ").append(dto.getYearOfStudy()).append("\n");
+            sb.append("----------------------------------------\n");
+            sb.append("📦 *CONTI-PASS BUNDLE INCLUDES:*\n");
+
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                java.util.List<java.util.Map<String, Object>> rosters = mapper.readValue(
+                        dto.getComboData(),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {}
+                );
+                for (java.util.Map<String, Object> roster : rosters) {
+                    sb.append("• *").append(roster.get("eventName")).append(":* ")
+                            .append(roster.get("teamName")).append(" (Leader: ").append(roster.get("leaderName")).append(")\n");
+                }
+            } catch (Exception e) {
+                sb.append("_(Failed to parse combo event details list)_\n");
+            }
+            sb.append("----------------------------------------\n");
+            sb.append("💬 _Verify payment screenshot above._\n");
+            return sb.toString();
+        }
+
         return """
                 🔥 *NEW REGISTRATION ALERT* 🔥
                 ----------------------------------------
