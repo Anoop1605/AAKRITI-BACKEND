@@ -71,6 +71,8 @@ public class RegistrationController {
                         eventDto.setCategory(EventCategory.MANAGEMENT);
                     }
 
+                    eventDto.setAmountPaid(registrationDto.getAmountPaid() != null ? registrationDto.getAmountPaid() : "3540");
+
                     comboDtos.add(eventDto);
                 }
                 sheetsService.appendComboRegistrations(comboDtos, "ComboPass");

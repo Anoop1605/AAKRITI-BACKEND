@@ -48,7 +48,7 @@ public class GoogleSheetsService {
     public void appendRegistrationSync(TeamRegistrationDto dto, String screenshotUrl) {
         try {
             String tabName = dto.getCategory().getSheetTabName();
-            String range = tabName + "!A:K";
+            String range = tabName + "!A:L";
 
             // Generate unique Team ID
             String teamId = "TEAM-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -69,7 +69,8 @@ public class GoogleSheetsService {
                     dto.getLeaderPhone(),
                     dto.getMemberNames(),
                     screenshotUrl,
-                    "Pending"
+                    "Pending",
+                    dto.getAmountPaid() != null ? dto.getAmountPaid() : ""
             );
 
             ValueRange body = new ValueRange()
