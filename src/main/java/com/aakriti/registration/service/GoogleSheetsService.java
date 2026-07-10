@@ -25,6 +25,27 @@ public class GoogleSheetsService {
 
     @Async
     public void appendRegistration(TeamRegistrationDto dto, String screenshotUrl) {
+        appendRegistrationSync(dto, screenshotUrl);
+    }
+
+    @Async
+    public void appendComboRegistrations(List<TeamRegistrationDto> dtos, String screenshotUrl) {
+        log.info("Starting sequential async append for {} combo pass events", dtos.size());
+        for (TeamRegistrationDto dto : dtos) {
+            appendRegistrationSync(dto, screenshotUrl);
+            try {
+                // Sleep briefly to prevent Google API rate limits and concurrent write lock clashes
+                Thread.sleep(300);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Combo pass registration append loop interrupted");
+                break;
+            }
+        }
+        log.info("Finished sequential combo pass append");
+    }
+
+    public void appendRegistrationSync(TeamRegistrationDto dto, String screenshotUrl) {
         try {
             String tabName = dto.getCategory().getSheetTabName();
             String range = tabName + "!A:K";

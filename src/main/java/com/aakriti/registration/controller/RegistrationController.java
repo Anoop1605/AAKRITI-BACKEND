@@ -45,6 +45,7 @@ public class RegistrationController {
                         new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() {}
                 );
 
+                java.util.List<TeamRegistrationDto> comboDtos = new java.util.ArrayList<>();
                 for (java.util.Map<String, Object> roster : rosters) {
                     TeamRegistrationDto eventDto = new TeamRegistrationDto();
                     eventDto.setCollegeName(registrationDto.getCollegeName());
@@ -62,16 +63,17 @@ public class RegistrationController {
                     eventDto.setLeaderPhone((String) roster.get("leaderPhone"));
                     eventDto.setMemberNames((String) roster.get("memberNames"));
                     
-                    // Resolve category based on eventId prefix (starts with "cul-" is Culturals, otherwise Management)
+                    // Resolve category based on eventId prefix (starts with "cu-" or "cul-" is Culturals, otherwise Management)
                     String eventId = (String) roster.get("eventId");
-                    if (eventId != null && eventId.startsWith("cul-")) {
+                    if (eventId != null && (eventId.startsWith("cu-") || eventId.startsWith("cul-"))) {
                         eventDto.setCategory(EventCategory.CULTURALS);
                     } else {
                         eventDto.setCategory(EventCategory.MANAGEMENT);
                     }
 
-                    sheetsService.appendRegistration(eventDto, "ComboPass");
+                    comboDtos.add(eventDto);
                 }
+                sheetsService.appendComboRegistrations(comboDtos, "ComboPass");
 
                 return ResponseEntity.status(HttpStatus.CREATED)
                         .body(Map.of("message", "Combo Pass Registration successful"));
