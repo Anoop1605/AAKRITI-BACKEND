@@ -49,7 +49,12 @@ public class RegistrationController {
                     TeamRegistrationDto eventDto = new TeamRegistrationDto();
                     eventDto.setCollegeName(registrationDto.getCollegeName());
                     eventDto.setYearOfStudy(registrationDto.getYearOfStudy());
-                    eventDto.setLeaderEmail(registrationDto.getLeaderEmail()); // Master submitter email
+                    
+                    String eventLeaderEmail = (String) roster.get("leaderEmail");
+                    if (eventLeaderEmail == null || eventLeaderEmail.trim().isEmpty()) {
+                        eventLeaderEmail = registrationDto.getLeaderEmail();
+                    }
+                    eventDto.setLeaderEmail(eventLeaderEmail);
                     
                     eventDto.setEventName((String) roster.get("eventName"));
                     eventDto.setTeamName((String) roster.get("teamName"));
