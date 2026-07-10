@@ -23,6 +23,31 @@ public class RegistrationController {
     private final TelegramBotService telegramBotService;
     private final GoogleSheetsService sheetsService;
 
+    @GetMapping("/count")
+    public ResponseEntity<?> getRegistrationCount(
+            @RequestParam("category") String category,
+            @RequestParam("eventName") String eventName) {
+        try {
+            log.info("Request for registration count: category={}, eventName={}", category, eventName);
+            String cleanCategory = category.trim().toUpperCase();
+            if (cleanCategory.equals("CULTURAL")) {
+                cleanCategory = "CULTURALS";
+            }
+            EventCategory eventCategory = EventCategory.valueOf(cleanCategory);
+            String tabName = eventCategory.getSheetTabName();
+            int count = sheetsService.getRegistrationCount(tabName, eventName);
+            return ResponseEntity.ok(Map.of("count", count));
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid category: {}", category, e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Invalid category: " + category));
+        } catch (Exception e) {
+            log.error("Failed to get registration count", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get registration count: " + e.getMessage()));
+        }
+    }
+
     @PostMapping
     public ResponseEntity<?> registerTeam(
             @ModelAttribute TeamRegistrationDto registrationDto,
@@ -81,6 +106,15 @@ public class RegistrationController {
                         .body(Map.of("message", "Combo Pass Registration successful"));
             } else {
                 // Standard single registration flow
+                if ("Free Fire".equalsIgnoreCase(registrationDto.getEventName())) {
+                    int currentCount = sheetsService.getRegistrationCount("Culturals", "Free Fire");
+                    if (currentCount >= 12) {
+                        log.warn("Free Fire registration rejected: 12 teams already registered.");
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(Map.of("error", "Registration closed: Free Fire is fully booked."));
+                    }
+                }
+
                 telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
 
                 String screenshotStatusPlaceholder = "Sent to Telegram (" + 

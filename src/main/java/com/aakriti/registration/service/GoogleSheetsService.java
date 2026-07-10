@@ -88,4 +88,28 @@ public class GoogleSheetsService {
             log.error("Failed to append registration data to Google Sheets", e);
         }
     }
+
+    public int getRegistrationCount(String tabName, String eventName) {
+        try {
+            String range = tabName + "!A:L";
+            ValueRange response = sheetsService.spreadsheets().values()
+                    .get(SPREADSHEET_ID, range)
+                    .execute();
+            List<List<Object>> values = response.getValues();
+            if (values == null || values.isEmpty()) {
+                return 0;
+            }
+            int count = 0;
+            for (List<Object> row : values) {
+                if (row.size() > 2 && row.get(2) != null && row.get(2).toString().trim().equalsIgnoreCase(eventName.trim())) {
+                    count++;
+                }
+            }
+            log.info("Counted {} registrations for event {} in tab {}", count, eventName, tabName);
+            return count;
+        } catch (IOException e) {
+            log.error("Failed to fetch registration count from Google Sheets for tab: {}, event: {}", tabName, eventName, e);
+            return 0;
+        }
+    }
 }
