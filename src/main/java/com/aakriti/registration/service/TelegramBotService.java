@@ -33,19 +33,19 @@ public class TelegramBotService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    @Async
-    public void sendRegistrationAlert(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename) {
+    public boolean sendRegistrationAlert(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename) {
         if (dto.getCategory() == EventCategory.COMBO) {
             log.info("Sending COMBO PASS registration alert to both Cultural and Management groups.");
-            sendToChannel(dto, screenshotBytes, originalFilename, culturalChatId);
-            sendToChannel(dto, screenshotBytes, originalFilename, managementChatId);
+            boolean success1 = sendToChannel(dto, screenshotBytes, originalFilename, culturalChatId);
+            boolean success2 = sendToChannel(dto, screenshotBytes, originalFilename, managementChatId);
+            return success1 || success2;
         } else {
             String targetChatId = determineChatId(dto.getCategory());
-            sendToChannel(dto, screenshotBytes, originalFilename, targetChatId);
+            return sendToChannel(dto, screenshotBytes, originalFilename, targetChatId);
         }
     }
 
-    private void sendToChannel(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename, String targetChatId) {
+    private boolean sendToChannel(TeamRegistrationDto dto, byte[] screenshotBytes, String originalFilename, String targetChatId) {
         String caption = formatTelegramMessage(dto);
         String url = "https://api.telegram.org/bot" + botToken + "/sendPhoto";
 
@@ -70,9 +70,67 @@ public class TelegramBotService {
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
             log.info("Telegram notification sent successfully to {}. Status code: {}", targetChatId, response.getStatusCode());
+            return response.getStatusCode().is2xxSuccessful();
 
         } catch (Exception e) {
             log.error("Failed to send notification message to Telegram channel " + targetChatId, e);
+            return false;
+        }
+    }
+
+    public void sendGoogleSheetsFailureAlert(TeamRegistrationDto dto, String errorMessage) {
+        String targetChatId = (dto.getCategory() == EventCategory.COMBO) ? culturalChatId : determineChatId(dto.getCategory());
+        String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("⚠️ *SYSTEM WARNING: GOOGLE SHEETS WRITE FAILED* ⚠️\n");
+        sb.append("----------------------------------------\n");
+        sb.append("The registration below was successfully received, but *failed to write to Google Sheets*.\n");
+        sb.append("Please add this record manually:\n\n");
+        
+        if (dto.getCategory() == EventCategory.COMBO) {
+            sb.append("👑 *Master Leader:* ").append(dto.getLeaderName()).append("\n");
+            sb.append("📧 *Email:* ").append(dto.getLeaderEmail()).append("\n");
+            sb.append("📞 *Phone:* ").append(dto.getLeaderPhone()).append("\n");
+            sb.append("🏛️ *Institution:* ").append(dto.getCollegeName()).append("\n");
+            sb.append("🎓 *Year:* ").append(dto.getYearOfStudy()).append("\n");
+            sb.append("💰 *Amount:* ").append(dto.getAmountPaid() != null ? dto.getAmountPaid() : "3540").append("\n");
+            sb.append("📦 *Combo Data:* ").append(dto.getComboData()).append("\n");
+        } else {
+            sb.append("🏆 *Team Name:* `").append(dto.getTeamName() != null && !dto.getTeamName().trim().isEmpty() ? dto.getTeamName() : "Solo").append("`\n");
+            sb.append("✨ *Event Name:* ").append(dto.getEventName()).append("\n");
+            sb.append("👑 *Leader Name:* ").append(dto.getLeaderName()).append("\n");
+            sb.append("📧 *Email:* ").append(dto.getLeaderEmail()).append("\n");
+            sb.append("📞 *Phone:* ").append(dto.getLeaderPhone()).append("\n");
+            sb.append("🏛️ *Institution:* ").append(dto.getCollegeName()).append("\n");
+            sb.append("🎓 *Year:* ").append(dto.getYearOfStudy()).append("\n");
+            sb.append("👥 *Members:* ").append(dto.getMemberNames() != null && !dto.getMemberNames().isEmpty() ? dto.getMemberNames() : "Solo").append("\n");
+            sb.append("💰 *Amount:* ").append(dto.getAmountPaid() != null ? dto.getAmountPaid() : "N/A").append("\n");
+        }
+        sb.append("\n❌ *Error Details:* ").append(errorMessage).append("\n");
+        sb.append("----------------------------------------\n");
+
+        try {
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("chat_id", targetChatId);
+            body.add("text", sb.toString());
+            body.add("parse_mode", "Markdown");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            restTemplate.postForEntity(url, requestEntity, String.class);
+            log.info("Google Sheets failure alert sent to Telegram channel {}", targetChatId);
+            
+            if (dto.getCategory() == EventCategory.COMBO) {
+                body.set("chat_id", managementChatId);
+                HttpEntity<MultiValueMap<String, Object>> requestEntity2 = new HttpEntity<>(body, headers);
+                restTemplate.postForEntity(url, requestEntity2, String.class);
+                log.info("Google Sheets failure alert sent to Telegram channel {}", managementChatId);
+            }
+        } catch (Exception e) {
+            log.error("Failed to send Google Sheets failure alert to Telegram channel " + targetChatId, e);
         }
     }
 
@@ -91,6 +149,7 @@ public class TelegramBotService {
             StringBuilder sb = new StringBuilder();
             sb.append("🔥 *NEW COMBO PASS REGISTRATION ALERT* 🔥\n");
             sb.append("----------------------------------------\n");
+            sb.append("🆔 *Combo Team ID:* `").append(dto.getTeamId() != null ? dto.getTeamId() : "N/A").append("`\n");
             sb.append("👑 *Master Submitter:* ").append(dto.getLeaderName()).append("\n");
             sb.append("📧 *Email Address:* ").append(dto.getLeaderEmail()).append("\n");
             sb.append("📞 *Phone Number:* ").append(dto.getLeaderPhone()).append("\n");
@@ -120,6 +179,7 @@ public class TelegramBotService {
         return """
                 🔥 *NEW REGISTRATION ALERT* 🔥
                 ----------------------------------------
+                🆔 *Team ID:* `%s`
                 🏆 *Team Name:* `%s`
                 ✨ *Event Name:* %s
                 🗂️ *Category:* `%s`
@@ -132,6 +192,7 @@ public class TelegramBotService {
                 ----------------------------------------
                 💬 _Verify payment screenshot above._
                 """.formatted(
+                dto.getTeamId() != null ? dto.getTeamId() : "N/A",
                 dto.getTeamName() != null && !dto.getTeamName().trim().isEmpty() ? dto.getTeamName() : "Solo",
                 dto.getEventName(),
                 dto.getCategory() != null ? dto.getCategory().name() : "N/A",

@@ -16,4 +16,5 @@ public class TeamRegistrationDto {
     private String memberNames;
     private String comboData;
     private String amountPaid;
+    private String teamId;
 }

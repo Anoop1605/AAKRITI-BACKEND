@@ -59,11 +59,28 @@ public class RegistrationController {
             byte[] screenshotBytes = screenshot.getBytes();
             String originalFilename = screenshot.getOriginalFilename();
 
+            // Generate and set Team ID on the DTO
             if (registrationDto.getCategory() == EventCategory.COMBO) {
-                // 1. Process payment file and send targeted channel alerts to both groups
-                telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
+                String comboTeamId = "COMBO-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+                registrationDto.setTeamId(comboTeamId);
+            } else {
+                String teamId = "TEAM-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+                registrationDto.setTeamId(teamId);
+            }
 
-                // 2. Parse comboData JSON and append 12 rows to Google Sheets
+            boolean telegramSuccess = false;
+            boolean sheetsSuccess = false;
+
+            // 1. Try Telegram synchronous alert
+            try {
+                telegramSuccess = telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
+            } catch (Exception e) {
+                log.error("Failed to send Telegram notification during registration", e);
+            }
+
+            // 2. Try Google Sheets synchronous write with retry
+            if (registrationDto.getCategory() == EventCategory.COMBO) {
+                // Parse comboData JSON and build DTO list
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 java.util.List<java.util.Map<String, Object>> rosters = mapper.readValue(
                         registrationDto.getComboData(),
@@ -88,7 +105,6 @@ public class RegistrationController {
                     eventDto.setLeaderPhone((String) roster.get("leaderPhone"));
                     eventDto.setMemberNames((String) roster.get("memberNames"));
                     
-                    // Resolve category based on eventId prefix (starts with "cu-" or "cul-" is Culturals, otherwise Management)
                     String eventId = (String) roster.get("eventId");
                     if (eventId != null && (eventId.startsWith("cu-") || eventId.startsWith("cul-"))) {
                         eventDto.setCategory(EventCategory.CULTURALS);
@@ -98,12 +114,14 @@ public class RegistrationController {
 
                     eventDto.setAmountPaid(registrationDto.getAmountPaid() != null ? registrationDto.getAmountPaid() : "3540");
 
+                    // Set unique teamId for each sub-registration in the combo
+                    String eventTeamId = "TEAM-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+                    eventDto.setTeamId(eventTeamId);
+
                     comboDtos.add(eventDto);
                 }
-                sheetsService.appendComboRegistrations(comboDtos, "ComboPass");
 
-                return ResponseEntity.status(HttpStatus.CREATED)
-                        .body(Map.of("message", "Combo Pass Registration successful"));
+                sheetsSuccess = sheetsService.appendComboRegistrations(comboDtos, "ComboPass");
             } else {
                 // Standard single registration flow
                 if ("Free Fire".equalsIgnoreCase(registrationDto.getEventName())) {
@@ -115,13 +133,30 @@ public class RegistrationController {
                     }
                 }
 
-                telegramBotService.sendRegistrationAlert(registrationDto, screenshotBytes, originalFilename);
-
                 String screenshotStatusPlaceholder = "Sent to Telegram (" + 
                         (registrationDto.getCategory() != null ? registrationDto.getCategory().name() : "N/A") + ")";
 
-                sheetsService.appendRegistration(registrationDto, screenshotStatusPlaceholder);
+                sheetsSuccess = sheetsService.appendRegistration(registrationDto, screenshotStatusPlaceholder);
+            }
 
+            // 3. Fallbacks and error messaging
+            if (!sheetsSuccess && telegramSuccess) {
+                // Sheets failed, but Telegram succeeded.
+                // We send a direct warning to Telegram so the admin knows sheets failed.
+                telegramBotService.sendGoogleSheetsFailureAlert(registrationDto, "All connection attempts to Google Sheets timed out/failed.");
+            }
+
+            if (!telegramSuccess && !sheetsSuccess) {
+                // BOTH failed. Return a 500 error.
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "Failed to process registration: Both Telegram and Google Sheets write operations failed. Please try again."));
+            }
+
+            // At least one succeeded. Return 201 success!
+            if (registrationDto.getCategory() == EventCategory.COMBO) {
+                return ResponseEntity.status(HttpStatus.CREATED)
+                        .body(Map.of("message", "Combo Pass Registration successful"));
+            } else {
                 return ResponseEntity.status(HttpStatus.CREATED)
                         .body(Map.of("message", "Registration successful", "teamName", registrationDto.getTeamName()));
             }
